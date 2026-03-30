@@ -136,6 +136,55 @@ header h1 a{color:var(--text-muted);font-size:.85rem;font-weight:500;margin-left
 .agg-table tr:hover td{color:#fff}
 .agg-table .num{text-align:right;font-variant-numeric:tabular-nums}
 
+.hero-search{position:relative;margin:16px 0 4px}
+.hero-input{
+  width:100%;padding:12px 16px 12px 44px;background:var(--surface);border:2px solid var(--border);
+  border-radius:8px;color:#fff;font-size:1rem;font-family:inherit;outline:none;transition:border-color .2s
+}
+.hero-input:focus{border-color:var(--accent)}
+.hero-input::placeholder{color:var(--text-dim)}
+.hero-icon{position:absolute;left:14px;top:14px;opacity:.35;pointer-events:none}
+.hero-results{
+  position:absolute;top:100%;left:0;right:0;z-index:50;background:var(--surface);
+  border:1px solid var(--border);border-radius:0 0 8px 8px;max-height:400px;overflow-y:auto;display:none
+}
+.hero-results.open{display:block}
+.hero-result{
+  padding:10px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--border);transition:background .1s
+}
+.hero-result:hover,.hero-result.active{background:var(--surface2)}
+.hero-result:last-child{border-bottom:none}
+.hr-left{min-width:0;flex:1}
+.hr-title{font-weight:600;color:#fff;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hr-cat{font-size:.72rem;color:var(--text-muted);margin-top:1px}
+.hr-meta{text-align:right;font-size:.72rem;white-space:nowrap;margin-left:16px}
+.hr-meta span{display:block}
+
+.view-toggle{
+  padding:5px 14px;border-radius:4px;border:1px solid var(--accent);background:transparent;
+  color:var(--accent);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit;margin-left:8px
+}
+.view-toggle:hover{background:var(--accent);color:#000}
+
+#ranking-container{display:none;max-height:700px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;background:var(--surface)}
+.rank-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.rank-table th{
+  position:sticky;top:0;background:var(--surface2);padding:8px 10px;text-align:left;cursor:pointer;
+  font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);
+  border-bottom:2px solid var(--border);user-select:none;white-space:nowrap
+}
+.rank-table th:hover{color:var(--accent)}
+.rank-table th .sa{margin-left:3px;font-size:.55rem;opacity:.5}
+.rank-table th.sorted .sa{opacity:1;color:var(--accent)}
+.rank-table td{padding:6px 10px;border-bottom:1px solid var(--border);color:var(--text)}
+.rank-table tbody tr{cursor:pointer;transition:background .1s}
+.rank-table tbody tr:hover td{background:var(--surface2);color:#fff}
+.rank-table .num{text-align:right;font-variant-numeric:tabular-nums}
+.score-bar{display:inline-block;height:8px;border-radius:2px;vertical-align:middle;margin-right:6px;min-width:4px}
+.rank-more{text-align:center;padding:12px;cursor:pointer;color:var(--accent);font-size:.8rem;font-weight:600;border-top:1px solid var(--border)}
+.rank-more:hover{text-decoration:underline}
+
 footer{border-top:1px solid var(--border);padding:20px;text-align:center;font-size:.72rem;color:var(--text-dim)}
 footer a{color:var(--text-muted)}
 footer .sep{margin:0 8px}
@@ -171,6 +220,12 @@ footer .sep{margin:0 8px}
   </p>
 </header>
 
+<div class="hero-search">
+  <svg class="hero-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+  <input class="hero-input" type="text" id="hero-input" placeholder="Finde deinen Beruf…" autocomplete="off">
+  <div class="hero-results" id="hero-results"></div>
+</div>
+
 <div id="controls">
   <span class="label">Layer</span>
   <div class="layer-btns">
@@ -186,12 +241,14 @@ footer .sep{margin:0 8px}
   </div>
   <div class="search-wrap">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-    <input type="text" id="search" placeholder="Beruf suchen…" autocomplete="off">
+    <input type="text" id="search" placeholder="Treemap filtern…" autocomplete="off">
   </div>
+  <button class="view-toggle" id="view-toggle">Ranking anzeigen</button>
 </div>
 
 <div id="summary"></div>
 <div id="treemap-container"></div>
+<div id="ranking-container"></div>
 </div>
 
 <footer>
@@ -262,6 +319,7 @@ function h(tag, props) {
 }
 
 let DATA=[], VALID=[], TREEMAP_ITEMS=[], slugMap=new Map(), activeLayer='outlook', searchQuery='';
+let rankSort={col:'_score',dir:-1}, rankLimit=100, showingRanking=false, heroIdx=-1;
 
 function getColor(d, layer) {
   if(layer==='outlook') return OUTLOOK_COLORS[d.outlook_desc]||'#444';
@@ -360,6 +418,175 @@ function buildTreemapData() {
   });
 }
 
+function computeScores(){
+  const pays=VALID.filter(d=>d.pay>0).map(d=>d.pay);
+  const outlooks=VALID.map(d=>d.outlook);
+  const exps=VALID.map(d=>d.exposure);
+  const minO=Math.min(...outlooks),maxO=Math.max(...outlooks);
+  const minP=Math.min(...pays),maxP=Math.max(...pays);
+  const minE=Math.min(...exps),maxE=Math.max(...exps);
+  VALID.forEach(d=>{
+    const nO=maxO>minO?(d.outlook-minO)/(maxO-minO):0.5;
+    const nP=d.pay>0&&maxP>minP?(d.pay-minP)/(maxP-minP):0;
+    const nE=maxE>minE?(d.exposure-minE)/(maxE-minE):0.5;
+    d._score=Math.round((nO*0.4+nP*0.2+(1-nE)*0.4)*100);
+  });
+}
+
+function scoreColor(s){
+  if(s>=70)return '#1b5e20';if(s>=55)return '#388e3c';if(s>=40)return '#f9a825';
+  if(s>=25)return '#e65100';return '#c62828';
+}
+
+function renderRanking(){
+  const container=document.getElementById('ranking-container');
+  while(container.firstChild)container.removeChild(container.firstChild);
+  const cols=[
+    {key:'title',label:'Beruf',cls:''},
+    {key:'category_name',label:'Kategorie',cls:''},
+    {key:'jobs',label:'Beschäft.',cls:'num'},
+    {key:'pay_monthly',label:'Gehalt/Mon.',cls:'num'},
+    {key:'outlook',label:'Ausblick',cls:'num'},
+    {key:'exposure',label:'KI-Expo',cls:'num'},
+    {key:'_score',label:'Zukunfts-Score',cls:'num'}
+  ];
+  const table=h('table',{className:'rank-table'});
+  const thead=h('thead');
+  const headRow=h('tr');
+  cols.forEach(c=>{
+    const th=h('th');
+    th.textContent=c.label;
+    const arrow=h('span',{className:'sa'});
+    if(rankSort.col===c.key){
+      th.classList.add('sorted');
+      arrow.textContent=rankSort.dir===-1?'▼':'▲';
+    } else {
+      arrow.textContent='▼';
+    }
+    th.appendChild(arrow);
+    th.addEventListener('click',()=>{
+      if(rankSort.col===c.key)rankSort.dir*=-1;
+      else{rankSort.col=c.key;rankSort.dir=c.key==='title'||c.key==='category_name'?1:-1;}
+      renderRanking();
+    });
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const sorted=[...VALID].sort((a,b)=>{
+    let va=a[rankSort.col],vb=b[rankSort.col];
+    if(typeof va==='string')return rankSort.dir*va.localeCompare(vb,'de');
+    return rankSort.dir*((va||0)-(vb||0));
+  });
+  const tbody=h('tbody');
+  const show=sorted.slice(0,rankLimit);
+  show.forEach(d=>{
+    const tr=h('tr',{onClick:()=>openDetail(d)});
+    tr.appendChild(h('td',{textContent:shortTitle(d.title,50)}));
+    tr.appendChild(h('td',{textContent:d.category_name.length>30?d.category_name.slice(0,28)+'…':d.category_name}));
+    tr.appendChild(h('td',{className:'num',textContent:fmtK(d.jobs)}));
+    const tdPay=h('td',{className:'num',textContent:d.pay_monthly>0?fmtEuro(d.pay_monthly):'k.A.'});
+    tr.appendChild(tdPay);
+    const tdO=h('td',{className:'num',textContent:fmtPct(d.outlook)});
+    tdO.style.color=d.outlook>=0?'#66bb6a':'#ef5350';
+    tr.appendChild(tdO);
+    const tdE=h('td',{className:'num',textContent:d.exposure+'/10'});
+    tdE.style.color=d.exposure>=7?'#ef5350':d.exposure>=4?'#ffa726':'#66bb6a';
+    tr.appendChild(tdE);
+    const tdS=h('td',{className:'num'});
+    const bar=h('span',{className:'score-bar'});
+    bar.style.width=Math.max(4,d._score*.6)+'px';
+    bar.style.background=scoreColor(d._score);
+    tdS.appendChild(bar);
+    tdS.appendChild(document.createTextNode(d._score));
+    tr.appendChild(tdS);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  container.appendChild(table);
+
+  if(sorted.length>rankLimit){
+    const more=h('div',{className:'rank-more',textContent:'Alle '+sorted.length+' Berufe anzeigen',onClick:()=>{
+      rankLimit=Infinity;renderRanking();
+    }});
+    container.appendChild(more);
+  }
+}
+
+function toggleView(){
+  showingRanking=!showingRanking;
+  const btn=document.getElementById('view-toggle');
+  document.getElementById('treemap-container').style.display=showingRanking?'none':'';
+  document.getElementById('ranking-container').style.display=showingRanking?'block':'none';
+  btn.textContent=showingRanking?'Treemap anzeigen':'Ranking anzeigen';
+  if(showingRanking)renderRanking();
+}
+
+function setupHeroSearch(){
+  const input=document.getElementById('hero-input');
+  const box=document.getElementById('hero-results');
+  let results=[];
+
+  function render(){
+    while(box.firstChild)box.removeChild(box.firstChild);
+    if(results.length===0){box.classList.remove('open');return;}
+    box.classList.add('open');
+    results.forEach((d,i)=>{
+      const row=h('div',{className:'hero-result'+(i===heroIdx?' active':'')});
+      const left=h('div',{className:'hr-left'});
+      left.appendChild(h('div',{className:'hr-title',textContent:shortTitle(d.title,55)}));
+      left.appendChild(h('div',{className:'hr-cat',textContent:d.category_name}));
+      row.appendChild(left);
+      const meta=h('div',{className:'hr-meta'});
+      const oSpan=h('span',{textContent:'Ausblick: '+fmtPct(d.outlook)});
+      oSpan.style.color=d.outlook>=0?'#66bb6a':'#ef5350';
+      meta.appendChild(oSpan);
+      const eSpan=h('span',{textContent:'KI-Expo: '+d.exposure+'/10'});
+      eSpan.style.color=d.exposure>=7?'#ef5350':d.exposure>=4?'#ffa726':'#66bb6a';
+      meta.appendChild(eSpan);
+      row.appendChild(meta);
+      row.addEventListener('click',()=>{pick(d);});
+      box.appendChild(row);
+    });
+  }
+  function pick(d){
+    input.value='';results=[];heroIdx=-1;box.classList.remove('open');
+    openDetail(d);
+  }
+  input.addEventListener('input',()=>{
+    const q=input.value.toLowerCase().trim();
+    heroIdx=-1;
+    if(q.length<2){results=[];render();return;}
+    results=VALID.filter(d=>d.title.toLowerCase().includes(q)||d.category_name.toLowerCase().includes(q)).slice(0,8);
+    render();
+  });
+  input.addEventListener('keydown',e=>{
+    if(!results.length)return;
+    if(e.key==='ArrowDown'){e.preventDefault();heroIdx=Math.min(heroIdx+1,results.length-1);render();}
+    else if(e.key==='ArrowUp'){e.preventDefault();heroIdx=Math.max(heroIdx-1,0);render();}
+    else if(e.key==='Enter'&&heroIdx>=0){e.preventDefault();pick(results[heroIdx]);}
+    else if(e.key==='Escape'){results=[];heroIdx=-1;render();input.blur();}
+  });
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('.hero-search')){results=[];heroIdx=-1;render();}
+  });
+}
+
+function findSimilar(d){
+  const group3=d.group||(d.slug?d.slug.slice(0,3):'');
+  let pool=VALID.filter(x=>x.slug!==d.slug&&!x._isAggregate);
+  let sameGroup=pool.filter(x=>(x.group||x.slug.slice(0,3))===group3);
+  if(sameGroup.length<3){
+    const extra=pool.filter(x=>x.category_name===d.category_name&&(x.group||x.slug.slice(0,3))!==group3);
+    sameGroup=sameGroup.concat(extra);
+  }
+  return sameGroup
+    .filter(x=>x.outlook>d.outlook||x.exposure<d.exposure)
+    .sort((a,b)=>(b._score||0)-(a._score||0))
+    .slice(0,5);
+}
+
 async function init(){
   const res=await fetch('data.json');
   DATA=await res.json();
@@ -368,11 +595,13 @@ async function init(){
   document.getElementById('h-count').textContent=fmt.format(DATA.length);
   const totalJobs=VALID.reduce((s,d)=>s+d.jobs,0);
   document.getElementById('h-jobs').textContent=fmtK(totalJobs);
+  computeScores();
   buildTreemapData();
   renderSummary();
   renderTreemap();
   renderLegend();
   setupEvents();
+  setupHeroSearch();
 }
 
 function renderSummary(){
@@ -647,6 +876,30 @@ function openDetail(d){
     sec.appendChild(h('p',{textContent:d.exposure_rationale}));
     panel.appendChild(sec);
   }
+  const similar=findSimilar(d);
+  if(similar.length>0){
+    const sec=h('div',{className:'dp-section'});
+    sec.appendChild(h('h3',{textContent:'Verwandte Berufe mit besserem Ausblick'}));
+    const tbl=h('table',{className:'agg-table'});
+    const thR=h('tr');
+    ['Beruf','Gehalt','Ausblick','KI'].forEach(t=>thR.appendChild(h('th',{textContent:t})));
+    tbl.appendChild(thR);
+    similar.forEach(s=>{
+      const tr=h('tr',{onClick:()=>openDetail(s)});
+      tr.appendChild(h('td',{textContent:shortTitle(s.title,40)}));
+      tr.appendChild(h('td',{className:'num',textContent:s.pay_monthly>0?fmtEuro(s.pay_monthly):'k.A.'}));
+      const tdO=h('td',{className:'num',textContent:fmtPct(s.outlook)});
+      tdO.style.color=s.outlook>=0?'#66bb6a':'#ef5350';
+      tr.appendChild(tdO);
+      const tdE=h('td',{className:'num',textContent:s.exposure+'/10'});
+      tdE.style.color=s.exposure>=7?'#ef5350':s.exposure>=4?'#ffa726':'#66bb6a';
+      tr.appendChild(tdE);
+      tbl.appendChild(tr);
+    });
+    sec.appendChild(tbl);
+    panel.appendChild(sec);
+  }
+
   panel.appendChild(h('a',{className:'dp-link',href:berufenetUrl(d),target:'_blank',rel:'noopener',textContent:'Auf Berufenet suchen →'}));
   document.getElementById('detail-overlay').classList.add('open');
 }
@@ -726,6 +979,7 @@ function setupEvents(){
     searchQuery=e.target.value;
     applySearch();
   });
+  document.getElementById('view-toggle').addEventListener('click',toggleView);
   document.getElementById('detail-overlay').addEventListener('click',e=>{
     if(e.target===document.getElementById('detail-overlay'))closeDetail();
   });
