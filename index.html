@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KI-Jobatlas – Deutscher Arbeitsmarkt & KI-Exposition</title>
+<meta name="description" content="KI-Jobatlas: Interaktive Treemap-Visualisierung des deutschen Arbeitsmarkts mit KI-Expositions-Bewertung für über 1.000 Berufe.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0e0e0e;--surface:#161616;--surface2:#1e1e1e;--border:#2a2a2a;
+  --text:#d4d4d4;--text-muted:#777;--text-dim:#555;--accent:#4fc3f7;
+}
+html{font-size:13px}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;overflow-x:hidden;display:flex;flex-direction:column;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+#app{max-width:1600px;margin:0 auto;padding:16px 20px 40px;width:100%;flex:1}
+header{margin-bottom:12px}
+header h1{font-size:1.55rem;font-weight:800;letter-spacing:-.03em;color:#fff;margin-bottom:4px}
+header h1 a{color:var(--text-muted);font-size:.85rem;font-weight:500;margin-left:8px;vertical-align:middle}
+.published{font-size:.82rem;color:var(--text-dim);margin-bottom:8px;letter-spacing:.01em}
+.published a{color:var(--accent);font-weight:600}
+.desc{font-size:.82rem;color:var(--text-muted);max-width:1100px;line-height:1.65}
+.desc strong{color:var(--text)}
+.caveat{font-size:.78rem;color:var(--text-dim);margin-top:6px;max-width:1100px;line-height:1.6}
+.caveat b{color:var(--text-muted)}
+
+#controls{display:flex;align-items:center;gap:16px;margin:14px 0 10px;flex-wrap:wrap}
+#controls .label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)}
+.layer-btns{display:flex;gap:4px}
+.layer-btn{
+  padding:5px 14px;border-radius:4px;border:1px solid var(--border);background:var(--surface);
+  color:var(--text-muted);font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s;font-family:inherit
+}
+.layer-btn:hover{border-color:#444;color:var(--text)}
+.layer-btn.active{background:#fff;color:#000;border-color:#fff}
+
+.legend{display:flex;align-items:center;gap:8px;margin-left:auto}
+.legend-label{font-size:.72rem;color:var(--text-muted);white-space:nowrap}
+.legend-bar{width:180px;height:10px;border-radius:3px}
+
+.search-wrap{position:relative}
+.search-wrap input{
+  background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:5px 10px 5px 28px;
+  color:var(--text);font-size:.78rem;font-family:inherit;width:220px;outline:none;transition:border-color .15s
+}
+.search-wrap input:focus{border-color:var(--accent)}
+.search-wrap svg{position:absolute;left:8px;top:50%;transform:translateY(-50%);opacity:.4}
+
+#summary{
+  display:grid;grid-template-columns:auto auto 1fr auto auto auto auto;
+  gap:0;margin:0 0 12px;padding:10px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+  font-size:.72rem;overflow-x:auto
+}
+.stat-group{padding:0 16px;border-right:1px solid var(--border)}
+.stat-group:first-child{padding-left:0}
+.stat-group:last-child{border-right:none;padding-right:0}
+.stat-title{font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:3px;white-space:nowrap;font-size:.65rem}
+.stat-big{font-size:1.5rem;font-weight:800;color:#fff;line-height:1.1}
+.stat-sub{color:var(--text-dim);font-size:.68rem}
+.stat-row{display:flex;justify-content:space-between;gap:12px;white-space:nowrap;line-height:1.6}
+.stat-row .val{font-weight:600;color:var(--text)}
+.tier-bar{display:flex;height:14px;border-radius:2px;overflow:hidden;margin:4px 0 2px;min-width:200px}
+.tier-bar div{height:100%;transition:width .3s}
+.tier-legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+.tier-legend span{display:flex;align-items:center;gap:3px;font-size:.63rem}
+.tier-legend .dot{width:7px;height:7px;border-radius:2px;flex-shrink:0}
+
+#treemap-container{position:relative;width:100%;border-radius:4px;overflow:hidden;background:#0a0a0a}
+.tm-group-label{
+  position:absolute;z-index:2;font-size:.65rem;font-weight:700;color:rgba(255,255,255,.7);
+  padding:2px 6px;pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);letter-spacing:.02em
+}
+.tm-cell{
+  position:absolute;overflow:hidden;cursor:pointer;transition:opacity .15s;
+  border:1px solid rgba(0,0,0,.35);padding:3px 5px;display:flex;flex-direction:column;justify-content:flex-start
+}
+.tm-cell:hover{opacity:.82;z-index:5}
+.tm-cell .t{font-size:.62rem;font-weight:600;line-height:1.3;color:rgba(0,0,0,.85);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.tm-cell .i{font-size:.56rem;color:rgba(0,0,0,.6);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm-cell.light-text .t{color:rgba(255,255,255,.9)}
+.tm-cell.light-text .i{color:rgba(255,255,255,.6)}
+.tm-cell.dimmed{opacity:.12}
+.tm-cell.aggregate{border-style:dashed;border-color:rgba(255,255,255,.2)}
+
+#tooltip{
+  position:fixed;z-index:100;pointer-events:none;background:rgba(10,10,10,.95);border:1px solid #333;
+  border-radius:6px;padding:10px 14px;font-size:.75rem;max-width:360px;display:none;backdrop-filter:blur(8px)
+}
+.tt-title{font-weight:700;color:#fff;margin-bottom:4px;font-size:.82rem;line-height:1.3}
+.tt-cat{color:var(--accent);font-size:.68rem;margin-bottom:6px}
+.tt-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
+.tt-label{color:var(--text-muted)}
+.tt-val{color:#fff;font-weight:600;text-align:right}
+
+#detail-overlay{
+  position:fixed;inset:0;z-index:200;display:none;justify-content:flex-end;background:rgba(0,0,0,.5)
+}
+#detail-overlay.open{display:flex}
+#detail-panel{
+  width:440px;max-width:90vw;height:100%;background:var(--surface);border-left:1px solid var(--border);
+  overflow-y:auto;padding:24px;animation:slideIn .2s ease
+}
+@keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.dp-close{float:right;background:none;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;padding:4px 8px}
+.dp-close:hover{color:#fff}
+.dp-title{font-size:1.15rem;font-weight:800;color:#fff;margin-bottom:4px;padding-right:30px;line-height:1.3}
+.dp-cat{color:var(--accent);font-size:.8rem;margin-bottom:2px}
+.dp-level{color:var(--text-muted);font-size:.78rem;margin-bottom:16px}
+.dp-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.dp-stat{background:var(--surface2);border-radius:6px;padding:10px 12px}
+.dp-stat-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:2px}
+.dp-stat-val{font-size:1.1rem;font-weight:700;color:#fff}
+.dp-stat-sub{font-size:.7rem;color:var(--text-muted)}
+.dp-section{margin-bottom:16px}
+.dp-section h3{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px}
+.dp-section p{font-size:.82rem;color:var(--text);line-height:1.6}
+.dp-link{
+  display:inline-block;margin-top:12px;padding:8px 16px;background:var(--accent);color:#000;
+  border-radius:5px;font-weight:600;font-size:.8rem;transition:opacity .15s
+}
+.dp-link:hover{opacity:.85;text-decoration:none}
+.exposure-bar-vis{display:flex;gap:2px;margin-top:4px}
+.exposure-bar-vis div{flex:1;height:6px;border-radius:2px;background:var(--border)}
+
+.agg-table{width:100%;border-collapse:collapse;font-size:.75rem;margin-top:8px}
+.agg-table th{text-align:left;color:var(--text-muted);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--border);font-size:.65rem;text-transform:uppercase;letter-spacing:.04em}
+.agg-table td{padding:4px 6px;border-bottom:1px solid var(--border);color:var(--text)}
+.agg-table tr{cursor:pointer}
+.agg-table tr:hover td{color:#fff}
+.agg-table .num{text-align:right;font-variant-numeric:tabular-nums}
+
+footer{border-top:1px solid var(--border);padding:20px;text-align:center;font-size:.72rem;color:var(--text-dim)}
+footer a{color:var(--text-muted)}
+footer .sep{margin:0 8px}
+
+@media(max-width:900px){
+  #summary{grid-template-columns:repeat(3,auto);gap:8px}
+  .stat-group{border-right:none;padding:4px 0}
+  .legend-bar{width:120px}
+}
+@media(max-width:600px){
+  html{font-size:12px}
+  #app{padding:10px 12px 30px}
+  #controls{gap:8px}
+  .search-wrap input{width:140px}
+  #summary{grid-template-columns:1fr 1fr}
+  #detail-panel{width:100%;max-width:100vw}
+}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <h1>KI-Jobatlas <a href="https://github.com/StefanMuellerAI/jobs" target="_blank" rel="noopener">GitHub</a></h1>
+  <p class="published">published by <a href="https://stefanai.de" target="_blank" rel="noopener">StefanAI</a> – Research & Development</p>
+  <p class="desc">
+    Diese Visualisierung zeigt <strong id="h-count"></strong> Berufe aus der <a href="https://statistik.arbeitsagentur.de/DE/Navigation/Grundlagen/Klassifikationen/Klassifikation-der-Berufe/KldB2010-Fassung2020/KldB2010-Fassung2020-Nav.html" target="_blank" rel="noopener">Klassifikation der Berufe (KldB 2010)</a> und umfasst rund <strong id="h-jobs"></strong> sozialversicherungspflichtig Beschäftigte. Die <strong>Fläche</strong> jedes Rechtecks ist proportional zur Beschäftigtenzahl. Die <strong>Farbe</strong> zeigt die ausgewählte Metrik. Klicken Sie auf eine Kachel für Details. Inspiriert von Andrej Karpathys <a href="https://karpathy.ai/jobs/" target="_blank" rel="noopener">US Job Market Visualizer</a>.
+  </p>
+  <p class="desc" style="margin-top:6px">
+    <b>Datenquellen:</b> Berufsliste und KldB-Klassifikation via <a href="https://github.com/bundesAPI" target="_blank" rel="noopener">BERUFENET & DKZ-REST API</a> der Bundesagentur für Arbeit — Median-Bruttogehälter und Beschäftigtenzahlen via <a href="https://web.arbeitsagentur.de/entgeltatlas/" target="_blank" rel="noopener">Entgeltatlas</a> der BA — KI-Expositions-Scores (0–10) und Wachstumsprognosen via <a href="https://www.anthropic.com/claude" target="_blank" rel="noopener">Claude</a> (Anthropic) LLM-Scoring.
+  </p>
+  <p class="caveat">
+    <b>Hinweis zu den KI-Expositions-Bewertungen:</b> Dies sind LLM-basierte Schätzungen, keine belastbaren Prognosen. Ein hoher Score bedeutet nicht, dass der Beruf verschwindet. Der Score berücksichtigt keine Nachfrageelastizität, latente Nachfrage, regulatorische Hürden oder gesellschaftliche Präferenzen. Viele stark exponierte Berufe werden umgestaltet, nicht ersetzt.
+  </p>
+</header>
+
+<div id="controls">
+  <span class="label">Layer</span>
+  <div class="layer-btns">
+    <button class="layer-btn active" data-layer="outlook">Ausblick</button>
+    <button class="layer-btn" data-layer="pay">Mediangehalt</button>
+    <button class="layer-btn" data-layer="education">Anforderungsniveau</button>
+    <button class="layer-btn" data-layer="exposure">KI-Exposition</button>
+  </div>
+  <div class="legend">
+    <span class="legend-label" id="legend-left">Schrumpfend</span>
+    <canvas class="legend-bar" id="legend-bar" width="180" height="10"></canvas>
+    <span class="legend-label" id="legend-right">Wachsend</span>
+  </div>
+  <div class="search-wrap">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="text" id="search" placeholder="Beruf suchen…" autocomplete="off">
+  </div>
+</div>
+
+<div id="summary"></div>
+<div id="treemap-container"></div>
+</div>
+
+<footer>
+  <span>© 2025 StefanAI – Stefan Müller</span>
+  <span class="sep">|</span>
+  <a href="impressum.html">Impressum</a>
+  <span class="sep">|</span>
+  <a href="datenschutz.html">Datenschutz</a>
+</footer>
+
+<div id="tooltip">
+  <div class="tt-title"></div>
+  <div class="tt-cat"></div>
+  <div class="tt-grid"></div>
+</div>
+
+<div id="detail-overlay">
+  <div id="detail-panel"></div>
+</div>
+
+<script>
+const MIN_JOBS = 15000;
+const OUTLOOK_COLORS = {
+  stark_schrumpfend:'#c62828',schrumpfend:'#e65100',stabil:'#f9a825',wachsend:'#388e3c',stark_wachsend:'#1b5e20'
+};
+const OUTLOOK_LABELS = {
+  stark_schrumpfend:'Stark schrumpfend',schrumpfend:'Schrumpfend',stabil:'Stabil',wachsend:'Wachsend',stark_wachsend:'Stark wachsend'
+};
+const OUTLOOK_ORDER = ['stark_schrumpfend','schrumpfend','stabil','wachsend','stark_wachsend'];
+const EDU_COLORS = {
+  'Keine formale Ausbildung':'#78909c','Berufsausbildung (2–3 Jahre)':'#4db6ac',
+  'Meister/Techniker/Fachwirt':'#ffb74d','Hochschulabschluss':'#42a5f5'
+};
+const EDU_ORDER = ['Keine formale Ausbildung','Berufsausbildung (2–3 Jahre)','Meister/Techniker/Fachwirt','Hochschulabschluss'];
+const EDU_SHORT = {'Keine formale Ausbildung':'Helfer','Berufsausbildung (2–3 Jahre)':'Fachkraft','Meister/Techniker/Fachwirt':'Spezialist','Hochschulabschluss':'Experte'};
+const PAY_BRACKETS = [
+  {label:'<30k €',min:0,max:30000},{label:'30–45k €',min:30000,max:45000},
+  {label:'45–60k €',min:45000,max:60000},{label:'60–75k €',min:60000,max:75000},{label:'>75k €',min:75000,max:Infinity}
+];
+
+const fmt = new Intl.NumberFormat('de-DE');
+const fmtK = v=>{
+  if(v>=1e6) return (v/1e6).toLocaleString('de-DE',{maximumFractionDigits:1})+'M';
+  if(v>=1e3) return Math.round(v/1e3).toLocaleString('de-DE')+'k';
+  return fmt.format(v);
+};
+const fmtPct = v=> (v>0?'+':'')+v.toLocaleString('de-DE',{maximumFractionDigits:1});
+const fmtEuro = v=> fmt.format(v)+' €';
+
+function h(tag, props) {
+  const el = document.createElement(tag);
+  if (props) {
+    Object.entries(props).forEach(([k, v]) => {
+      if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+      else if (k === 'className') el.className = v;
+      else if (k === 'textContent') el.textContent = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
+      else el.setAttribute(k, v);
+    });
+  }
+  for (let i = 2; i < arguments.length; i++) {
+    const c = arguments[i];
+    if (c == null) continue;
+    if (Array.isArray(c)) c.forEach(x => { if(x) el.appendChild(typeof x === 'string' ? document.createTextNode(x) : x); });
+    else el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return el;
+}
+
+let DATA=[], VALID=[], TREEMAP_ITEMS=[], slugMap=new Map(), activeLayer='outlook', searchQuery='';
+
+function getColor(d, layer) {
+  if(layer==='outlook') return OUTLOOK_COLORS[d.outlook_desc]||'#444';
+  if(layer==='pay'){
+    if(!d.pay||d.pay<=0) return '#333';
+    const s=d3.scaleSequential(d3.interpolateViridis).domain([24000,88000]);
+    return s(Math.max(24000,Math.min(88000,d.pay)));
+  }
+  if(layer==='education') return EDU_COLORS[d.education]||'#444';
+  if(layer==='exposure'){
+    const s=d3.scaleSequential(t=>d3.interpolateRdYlGn(1-t)).domain([1,10]);
+    return s(d.exposure);
+  }
+  return '#444';
+}
+
+function needsLightText(color){
+  const c=d3.color(color);
+  if(!c)return false;
+  return (c.r*0.299+c.g*0.587+c.b*0.114)<140;
+}
+
+function shortTitle(title,maxLen){
+  let t=title.replace(/ - (fachlich ausgerichtete|Helfer-\/Anlern|hoch komplexe|komplexe Spezialist).*$/,'');
+  if(maxLen && t.length>maxLen) t=t.slice(0,maxLen-1)+'…';
+  return t;
+}
+
+function berufenetUrl(d){
+  const clean=d.title
+    .replace(/\s*-\s*(fachlich ausgerichtete Tätigkeiten|Helfer-\/Anlerntätigkeiten|hoch komplexe Tätigkeiten|komplexe Spezialistentätigkeiten)$/,'')
+    .replace(/\s*\(ohne Spezialisierung\)/,'')
+    .replace(/\s*\(sonstige spezifische Tätigkeitsangabe\)/,'')
+    .replace(/&/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+  return 'https://web.arbeitsagentur.de/berufenet/?path=null/suchergebnisse&such='+encodeURIComponent(clean);
+}
+
+function weightedAvg(items, field) {
+  const totalJ = items.reduce((s,d) => s + d.jobs, 0);
+  if(totalJ === 0) return 0;
+  return items.reduce((s,d) => s + (d[field]||0) * d.jobs, 0) / totalJ;
+}
+
+function dominantValue(items, field) {
+  const counts = {};
+  items.forEach(d => { const k = d[field]||''; counts[k] = (counts[k]||0) + d.jobs; });
+  let best = '', bestV = 0;
+  Object.entries(counts).forEach(([k,v]) => { if(v > bestV){ best = k; bestV = v; }});
+  return best;
+}
+
+function buildTreemapData() {
+  TREEMAP_ITEMS = [];
+  slugMap.clear();
+  const cats = [...new Set(VALID.map(d => d.category_name))];
+
+  cats.forEach(cat => {
+    const items = VALID.filter(d => d.category_name === cat).sort((a,b) => b.jobs - a.jobs);
+    const individual = [];
+    const toAggregate = [];
+
+    items.forEach((d, i) => {
+      if (d.jobs >= MIN_JOBS || i < 3) individual.push(d);
+      else toAggregate.push(d);
+    });
+
+    individual.forEach(d => {
+      TREEMAP_ITEMS.push(d);
+      slugMap.set(d.slug, d);
+    });
+
+    if (toAggregate.length > 0) {
+      const totalJ = toAggregate.reduce((s,d) => s + d.jobs, 0);
+      const agg = {
+        _isAggregate: true,
+        _children: toAggregate,
+        title: 'Weitere Berufe (' + toAggregate.length + ')',
+        slug: '_agg_' + cat.slice(0,10).replace(/[^a-zA-Z]/g,''),
+        category_name: cat,
+        group: '',
+        anforderungsniveau: 'Gemischt',
+        jobs: totalJ,
+        pay: Math.round(weightedAvg(toAggregate.filter(d=>d.pay>0), 'pay')),
+        pay_monthly: Math.round(weightedAvg(toAggregate.filter(d=>d.pay_monthly>0), 'pay_monthly')),
+        outlook: Math.round(weightedAvg(toAggregate, 'outlook') * 10) / 10,
+        outlook_desc: dominantValue(toAggregate, 'outlook_desc'),
+        education: dominantValue(toAggregate, 'education'),
+        exposure: Math.round(weightedAvg(toAggregate, 'exposure') * 10) / 10,
+        url: ''
+      };
+      TREEMAP_ITEMS.push(agg);
+      slugMap.set(agg.slug, agg);
+    }
+  });
+}
+
+async function init(){
+  const res=await fetch('data.json');
+  DATA=await res.json();
+  VALID=DATA.filter(d=>d.jobs!=null&&d.jobs>0);
+  VALID.sort((a,b)=>b.jobs-a.jobs);
+  document.getElementById('h-count').textContent=fmt.format(DATA.length);
+  const totalJobs=VALID.reduce((s,d)=>s+d.jobs,0);
+  document.getElementById('h-jobs').textContent=fmtK(totalJobs);
+  buildTreemapData();
+  renderSummary();
+  renderTreemap();
+  renderLegend();
+  setupEvents();
+}
+
+function renderSummary(){
+  const el=document.getElementById('summary');
+  while(el.firstChild)el.removeChild(el.firstChild);
+  const totalJobs=VALID.reduce((s,d)=>s+d.jobs,0);
+  const weightedOutlook=VALID.reduce((s,d)=>s+d.outlook*d.jobs,0)/totalJobs;
+
+  el.appendChild(h('div',{className:'stat-group'},
+    h('div',{className:'stat-title',textContent:'Beschäftigte'}),
+    h('div',{className:'stat-big',textContent:fmtK(totalJobs)}),
+    h('div',{className:'stat-sub',textContent:'erfasst'})
+  ));
+
+  const avgEl=h('div',{className:'stat-big',textContent:fmtPct(weightedOutlook)});
+  avgEl.style.color=weightedOutlook>=0?'#66bb6a':'#ef5350';
+  el.appendChild(h('div',{className:'stat-group'},
+    h('div',{className:'stat-title',textContent:'Ø Ausblick'}),avgEl,
+    h('div',{className:'stat-sub',textContent:'beschäftigungsgew.'})
+  ));
+
+  const tierJobs={};
+  OUTLOOK_ORDER.forEach(k=>tierJobs[k]=0);
+  VALID.forEach(d=>{const k=d.outlook_desc||'stabil';if(tierJobs[k]!=null)tierJobs[k]+=d.jobs;});
+  const tierBar=h('div',{className:'tier-bar'});
+  OUTLOOK_ORDER.forEach(k=>{
+    const pct=(tierJobs[k]/totalJobs*100);
+    const seg=h('div');seg.style.width=pct+'%';seg.style.background=OUTLOOK_COLORS[k];
+    seg.title=OUTLOOK_LABELS[k]+': '+fmtK(tierJobs[k]);
+    tierBar.appendChild(seg);
+  });
+  const tierLeg=h('div',{className:'tier-legend'});
+  OUTLOOK_ORDER.forEach(k=>{
+    const dot=h('span',{className:'dot'});dot.style.background=OUTLOOK_COLORS[k];
+    const pctStr=(tierJobs[k]/totalJobs*100).toFixed(0)+'%';
+    tierLeg.appendChild(h('span',null,dot,' '+OUTLOOK_LABELS[k]+' '+fmtK(tierJobs[k])+' ',h('span',{style:{color:'var(--text-dim)'},textContent:pctStr})));
+  });
+  el.appendChild(h('div',{className:'stat-group'},h('div',{className:'stat-title',textContent:'Beschäftigung nach Ausblick'}),tierBar,tierLeg));
+
+  const payGroup=h('div',{className:'stat-group'},h('div',{className:'stat-title',textContent:'Ausblick nach Gehalt'}));
+  PAY_BRACKETS.forEach(b=>{
+    const items=VALID.filter(d=>d.pay>0&&d.pay>=b.min&&d.pay<b.max);
+    const jobs=items.reduce((s,d)=>s+d.jobs,0);
+    if(jobs===0)return;
+    const avg=items.reduce((s,d)=>s+d.outlook*d.jobs,0)/jobs;
+    const row=h('div',{className:'stat-row'},h('span',{textContent:b.label}));
+    const valEl=h('span',{className:'val',textContent:fmtPct(avg)});
+    valEl.style.color=avg>=0?'#66bb6a':'#ef5350';
+    row.appendChild(valEl);payGroup.appendChild(row);
+  });
+  el.appendChild(payGroup);
+
+  const eduGroup=h('div',{className:'stat-group'},h('div',{className:'stat-title',textContent:'Ausblick nach Niveau'}));
+  EDU_ORDER.forEach(e=>{
+    const items=VALID.filter(d=>d.education===e);
+    const jobs=items.reduce((s,d)=>s+d.jobs,0);
+    if(jobs===0)return;
+    const avg=items.reduce((s,d)=>s+d.outlook*d.jobs,0)/jobs;
+    const row=h('div',{className:'stat-row'},h('span',{textContent:EDU_SHORT[e]||e}));
+    const valEl=h('span',{className:'val',textContent:fmtPct(avg)});
+    valEl.style.color=avg>=0?'#66bb6a':'#ef5350';
+    row.appendChild(valEl);eduGroup.appendChild(row);
+  });
+  el.appendChild(eduGroup);
+
+  const declining=VALID.filter(d=>d.outlook<0);
+  const declJobs=declining.reduce((s,d)=>s+d.jobs,0);
+  const declBig=h('div',{className:'stat-big',textContent:fmtK(declJobs)});
+  declBig.style.color='#ef5350';
+  el.appendChild(h('div',{className:'stat-group'},
+    h('div',{className:'stat-title',textContent:'Schrumpfende Berufe'}),declBig,
+    h('div',{className:'stat-sub',textContent:'neg. Ausblick'})
+  ));
+
+  const growing=VALID.filter(d=>d.outlook>0);
+  const growJobs=growing.reduce((s,d)=>s+d.jobs,0);
+  const growBig=h('div',{className:'stat-big',textContent:fmtK(growJobs)});
+  growBig.style.color='#66bb6a';
+  el.appendChild(h('div',{className:'stat-group'},
+    h('div',{className:'stat-title',textContent:'Wachsende Berufe'}),growBig,
+    h('div',{className:'stat-sub',textContent:'pos. Ausblick'})
+  ));
+}
+
+function renderTreemap(){
+  const container=document.getElementById('treemap-container');
+  const W=container.clientWidth;
+  const H=Math.max(520, Math.min(window.innerHeight*0.72,920));
+  container.style.height=H+'px';
+  while(container.firstChild)container.removeChild(container.firstChild);
+
+  const cats=[...new Set(TREEMAP_ITEMS.map(d=>d.category_name))].sort();
+  const hierData={name:'root',children:cats.map(cat=>({
+    name:cat,
+    children:TREEMAP_ITEMS.filter(d=>d.category_name===cat).map(d=>({name:d.title,value:d.jobs,occ:d}))
+  }))};
+
+  const root=d3.hierarchy(hierData).sum(d=>d.value||0).sort((a,b)=>b.value-a.value);
+  d3.treemap().size([W,H]).paddingTop(20).paddingInner(2).paddingOuter(4).round(true).tile(d3.treemapSquarify.ratio(1.2))(root);
+
+  root.children.forEach(cat=>{
+    const lbl=h('div',{className:'tm-group-label'});
+    lbl.style.left=(cat.x0+4)+'px';
+    lbl.style.top=(cat.y0+2)+'px';
+    lbl.style.width=(cat.x1-cat.x0-8)+'px';
+    const catName=cat.data.name;
+    lbl.textContent=catName.length>55?catName.slice(0,53)+'…':catName;
+    container.appendChild(lbl);
+  });
+
+  root.leaves().forEach(leaf=>{
+    const d=leaf.data.occ;
+    const w=leaf.x1-leaf.x0, ht=leaf.y1-leaf.y0;
+    if(w<3||ht<3)return;
+    const cell=h('div',{className:'tm-cell'});
+    if(d._isAggregate) cell.classList.add('aggregate');
+    const bg=getColor(d,activeLayer);
+    cell.style.left=leaf.x0+'px';
+    cell.style.top=leaf.y0+'px';
+    cell.style.width=w+'px';
+    cell.style.height=ht+'px';
+    cell.style.background=bg;
+    if(needsLightText(bg))cell.classList.add('light-text');
+    cell.dataset.slug=d.slug;
+
+    if(w>40&&ht>18){
+      const maxChars=Math.floor(w/5.5)*Math.min(Math.floor(ht/13),4);
+      cell.appendChild(h('div',{className:'t',textContent:shortTitle(d.title,Math.max(8,maxChars))}));
+    }
+    if(w>90&&ht>34){
+      const outlookStr=d.outlook>0?'+'+d.outlook:String(d.outlook);
+      cell.appendChild(h('div',{className:'i',textContent:outlookStr+' · '+fmtK(d.jobs)+' Beschäft.'}));
+    }
+
+    cell.addEventListener('mouseenter',e=>showTooltip(e,d));
+    cell.addEventListener('mousemove',moveTooltip);
+    cell.addEventListener('mouseleave',hideTooltip);
+    cell.addEventListener('click',()=>d._isAggregate?openAggregateDetail(d):openDetail(d));
+    container.appendChild(cell);
+  });
+}
+
+function updateColors(){
+  document.querySelectorAll('.tm-cell').forEach(cell=>{
+    const d=slugMap.get(cell.dataset.slug);
+    if(!d)return;
+    const bg=getColor(d,activeLayer);
+    cell.style.background=bg;
+    cell.classList.toggle('light-text',needsLightText(bg));
+  });
+}
+
+function renderLegend(){
+  const canvas=document.getElementById('legend-bar');
+  const ctx=canvas.getContext('2d');
+  const w=canvas.width,ht=canvas.height;
+  ctx.clearRect(0,0,w,ht);
+  const ll=document.getElementById('legend-left');
+  const lr=document.getElementById('legend-right');
+
+  if(activeLayer==='outlook'){
+    ll.textContent='Schrumpfend';lr.textContent='Wachsend';
+    const colors=[OUTLOOK_COLORS.stark_schrumpfend,OUTLOOK_COLORS.schrumpfend,OUTLOOK_COLORS.stabil,OUTLOOK_COLORS.wachsend,OUTLOOK_COLORS.stark_wachsend];
+    const grad=ctx.createLinearGradient(0,0,w,0);
+    colors.forEach((c,i)=>grad.addColorStop(i/(colors.length-1),c));
+    ctx.fillStyle=grad;ctx.beginPath();ctx.roundRect(0,0,w,ht,3);ctx.fill();
+  } else if(activeLayer==='pay'){
+    ll.textContent='Niedrig';lr.textContent='Hoch';
+    const s=d3.scaleSequential(d3.interpolateViridis).domain([0,w]);
+    for(let x=0;x<w;x++){ctx.fillStyle=s(x);ctx.fillRect(x,0,1,ht);}
+  } else if(activeLayer==='education'){
+    ll.textContent='Helfer';lr.textContent='Experte';
+    const cols=EDU_ORDER.map(e=>EDU_COLORS[e]);
+    const segW=w/cols.length;
+    cols.forEach((c,i)=>{ctx.fillStyle=c;ctx.fillRect(i*segW,0,segW-1,ht);});
+  } else if(activeLayer==='exposure'){
+    ll.textContent='Niedrig';lr.textContent='Hoch';
+    const s=d3.scaleSequential(t=>d3.interpolateRdYlGn(1-t)).domain([0,w]);
+    for(let x=0;x<w;x++){ctx.fillStyle=s(x);ctx.fillRect(x,0,1,ht);}
+  }
+}
+
+function showTooltip(e,d){
+  const tt=document.getElementById('tooltip');
+  tt.style.display='block';
+  tt.querySelector('.tt-title').textContent=d.title;
+  tt.querySelector('.tt-cat').textContent=d.category_name+(d._isAggregate?' · Aggregiert':' · '+d.anforderungsniveau);
+  const grid=tt.querySelector('.tt-grid');
+  while(grid.firstChild)grid.removeChild(grid.firstChild);
+
+  const outlookColor=d.outlook>=0?'#66bb6a':'#ef5350';
+  const expColor=d.exposure>=7?'#ef5350':d.exposure>=4?'#ffa726':'#66bb6a';
+  const rows=[
+    ['Beschäftigte',fmt.format(d.jobs),null],
+    ['Gehalt',d.pay>0?fmtEuro(d.pay_monthly)+'/Mon.':'k.A.',null],
+    ['Ausblick',fmtPct(d.outlook)+' ('+(OUTLOOK_LABELS[d.outlook_desc]||'–')+')',outlookColor],
+    ['KI-Exposition',(d._isAggregate?'Ø ':'')+Math.round(d.exposure)+'/10',expColor]
+  ];
+  if(d._isAggregate) rows.push(['Enthält',d._children.length+' Berufe',null]);
+  rows.forEach(([label,value,color])=>{
+    grid.appendChild(h('span',{className:'tt-label',textContent:label}));
+    const valSpan=h('span',{className:'tt-val',textContent:value});
+    if(color)valSpan.style.color=color;
+    grid.appendChild(valSpan);
+  });
+  moveTooltip(e);
+}
+
+function moveTooltip(e){
+  const tt=document.getElementById('tooltip');
+  const x=e.clientX,y=e.clientY,pad=12;
+  let left=x+pad,top=y+pad;
+  if(left+tt.offsetWidth>window.innerWidth-10)left=x-tt.offsetWidth-pad;
+  if(top+tt.offsetHeight>window.innerHeight-10)top=y-tt.offsetHeight-pad;
+  tt.style.left=left+'px';tt.style.top=top+'px';
+}
+
+function hideTooltip(){document.getElementById('tooltip').style.display='none';}
+
+function openDetail(d){
+  const panel=document.getElementById('detail-panel');
+  while(panel.firstChild)panel.removeChild(panel.firstChild);
+
+  const outlookColor=d.outlook>=0?'#66bb6a':'#ef5350';
+  const expColor=d.exposure>=7?'#ef5350':d.exposure>=4?'#ffa726':'#66bb6a';
+
+  panel.appendChild(h('button',{className:'dp-close',textContent:'×',onClick:closeDetail}));
+  panel.appendChild(h('div',{className:'dp-title',textContent:d.title}));
+  panel.appendChild(h('div',{className:'dp-cat',textContent:d.category_name}));
+  panel.appendChild(h('div',{className:'dp-level',textContent:d.anforderungsniveau+' · '+d.education}));
+
+  const stats=h('div',{className:'dp-stats'});
+  const s1=h('div',{className:'dp-stat'});
+  s1.appendChild(h('div',{className:'dp-stat-label',textContent:'Beschäftigte'}));
+  s1.appendChild(h('div',{className:'dp-stat-val',textContent:fmt.format(d.jobs)}));
+  stats.appendChild(s1);
+
+  const s2=h('div',{className:'dp-stat'});
+  s2.appendChild(h('div',{className:'dp-stat-label',textContent:'Monatsgehalt'}));
+  s2.appendChild(h('div',{className:'dp-stat-val',textContent:d.pay>0?fmtEuro(d.pay_monthly):'k.A.'}));
+  if(d.pay>0)s2.appendChild(h('div',{className:'dp-stat-sub',textContent:fmtEuro(d.pay)+'/Jahr'}));
+  stats.appendChild(s2);
+
+  const s3=h('div',{className:'dp-stat'});
+  s3.appendChild(h('div',{className:'dp-stat-label',textContent:'Ausblick'}));
+  const oVal=h('div',{className:'dp-stat-val',textContent:fmtPct(d.outlook)});
+  oVal.style.color=outlookColor;
+  s3.appendChild(oVal);
+  s3.appendChild(h('div',{className:'dp-stat-sub',textContent:OUTLOOK_LABELS[d.outlook_desc]||'–'}));
+  stats.appendChild(s3);
+
+  const s4=h('div',{className:'dp-stat'});
+  s4.appendChild(h('div',{className:'dp-stat-label',textContent:'KI-Exposition'}));
+  const eVal=h('div',{className:'dp-stat-val',textContent:d.exposure+'/10'});
+  eVal.style.color=expColor;
+  s4.appendChild(eVal);
+  const expBar=h('div',{className:'exposure-bar-vis'});
+  for(let i=1;i<=10;i++){const seg=h('div');if(i<=d.exposure)seg.style.background=expColor;expBar.appendChild(seg);}
+  s4.appendChild(expBar);
+  stats.appendChild(s4);
+  panel.appendChild(stats);
+
+  if(d.outlook_rationale){
+    const sec=h('div',{className:'dp-section'});
+    sec.appendChild(h('h3',{textContent:'Begründung Ausblick'}));
+    sec.appendChild(h('p',{textContent:d.outlook_rationale}));
+    panel.appendChild(sec);
+  }
+  if(d.exposure_rationale){
+    const sec=h('div',{className:'dp-section'});
+    sec.appendChild(h('h3',{textContent:'Begründung KI-Exposition'}));
+    sec.appendChild(h('p',{textContent:d.exposure_rationale}));
+    panel.appendChild(sec);
+  }
+  panel.appendChild(h('a',{className:'dp-link',href:berufenetUrl(d),target:'_blank',rel:'noopener',textContent:'Auf Berufenet suchen →'}));
+  document.getElementById('detail-overlay').classList.add('open');
+}
+
+function openAggregateDetail(d){
+  const panel=document.getElementById('detail-panel');
+  while(panel.firstChild)panel.removeChild(panel.firstChild);
+
+  panel.appendChild(h('button',{className:'dp-close',textContent:'×',onClick:closeDetail}));
+  panel.appendChild(h('div',{className:'dp-title',textContent:d._children.length+' weitere Berufe'}));
+  panel.appendChild(h('div',{className:'dp-cat',textContent:d.category_name}));
+  panel.appendChild(h('div',{className:'dp-level',textContent:'Berufe mit weniger als '+fmt.format(MIN_JOBS)+' Beschäftigten'}));
+
+  const stats=h('div',{className:'dp-stats'});
+  const s1=h('div',{className:'dp-stat'});
+  s1.appendChild(h('div',{className:'dp-stat-label',textContent:'Beschäftigte gesamt'}));
+  s1.appendChild(h('div',{className:'dp-stat-val',textContent:fmt.format(d.jobs)}));
+  stats.appendChild(s1);
+  const s2=h('div',{className:'dp-stat'});
+  s2.appendChild(h('div',{className:'dp-stat-label',textContent:'Anzahl Berufe'}));
+  s2.appendChild(h('div',{className:'dp-stat-val',textContent:String(d._children.length)}));
+  stats.appendChild(s2);
+  panel.appendChild(stats);
+
+  const sec=h('div',{className:'dp-section'});
+  sec.appendChild(h('h3',{textContent:'Enthaltene Berufe (klicken für Details)'}));
+  const table=h('table',{className:'agg-table'});
+  const thead=h('tr');
+  ['Beruf','Beschäft.','Ausblick','KI'].forEach(t=>thead.appendChild(h('th',{textContent:t})));
+  table.appendChild(thead);
+  const sorted=[...d._children].sort((a,b)=>b.jobs-a.jobs);
+  sorted.forEach(child=>{
+    const tr=h('tr',{onClick:()=>openDetail(child)});
+    tr.appendChild(h('td',{textContent:shortTitle(child.title,45)}));
+    const tdJ=h('td',{className:'num',textContent:fmtK(child.jobs)});
+    tr.appendChild(tdJ);
+    const tdO=h('td',{className:'num',textContent:fmtPct(child.outlook)});
+    tdO.style.color=child.outlook>=0?'#66bb6a':'#ef5350';
+    tr.appendChild(tdO);
+    const tdE=h('td',{className:'num',textContent:child.exposure+'/10'});
+    tr.appendChild(tdE);
+    table.appendChild(tr);
+  });
+  sec.appendChild(table);
+  panel.appendChild(sec);
+
+  document.getElementById('detail-overlay').classList.add('open');
+}
+
+function closeDetail(){document.getElementById('detail-overlay').classList.remove('open');}
+
+function applySearch(){
+  const q=searchQuery.toLowerCase().trim();
+  document.querySelectorAll('.tm-cell').forEach(cell=>{
+    if(!q){cell.classList.remove('dimmed');return;}
+    const d=slugMap.get(cell.dataset.slug);
+    if(!d){cell.classList.add('dimmed');return;}
+    let match=d.title.toLowerCase().includes(q)||d.category_name.toLowerCase().includes(q);
+    if(!match && d._isAggregate && d._children){
+      match=d._children.some(c=>c.title.toLowerCase().includes(q));
+    }
+    cell.classList.toggle('dimmed',!match);
+  });
+}
+
+function setupEvents(){
+  document.querySelectorAll('.layer-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.layer-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      activeLayer=btn.dataset.layer;
+      updateColors();
+      renderLegend();
+    });
+  });
+  document.getElementById('search').addEventListener('input',e=>{
+    searchQuery=e.target.value;
+    applySearch();
+  });
+  document.getElementById('detail-overlay').addEventListener('click',e=>{
+    if(e.target===document.getElementById('detail-overlay'))closeDetail();
+  });
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape')closeDetail();
+  });
+  let resizeTimer;
+  window.addEventListener('resize',()=>{
+    clearTimeout(resizeTimer);
+    resizeTimer=setTimeout(()=>renderTreemap(),200);
+  });
+}
+
+init();
+</script>
+</body>
+</html>
